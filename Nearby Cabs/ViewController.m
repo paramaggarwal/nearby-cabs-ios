@@ -8,10 +8,12 @@
 
 #import "ViewController.h"
 #import <CoreLocation/CoreLocation.h>
+#import <SIOSocket/SIOSocket.h>
 
 @interface ViewController () <CLLocationManagerDelegate, MKMapViewDelegate>
 
 @property (strong, nonatomic) CLLocationManager *locationManager;
+@property (strong, nonatomic) SIOSocket *socket;
 
 @end
 
@@ -29,6 +31,29 @@
     }
     [self.locationManager startUpdatingLocation];
     
+    __block ViewController *pself = self;
+    [SIOSocket socketWithHost:@"http://Params-MacBook-Pro.local:3000" response:^(SIOSocket *socket) {
+        self.socket = socket;
+//        NSLog(@"%@", socket);
+        
+        [self.socket setOnConnect:^{
+            NSLog(@"client connected to server");
+            
+            [pself.socket emit:@"log" args:@[@"Hi, server!"]];
+        }];
+        
+        [pself.socket setOnDisconnect:^{
+            NSLog(@"client disconnected from server");
+        }];
+        
+        [pself.socket setOnError:^(NSDictionary *error) {
+            NSLog(@"%@", error);
+        }];
+        
+        [pself.socket on:@"log" callback:^(NSArray *args) {
+            NSLog(@"%@", args);
+        }];
+    }];
 }
 
 - (void)didReceiveMemoryWarning {
@@ -39,8 +64,10 @@
 // Location Manager Delegate Methods
 - (void)locationManager:(CLLocationManager *)manager didUpdateLocations:(NSArray *)locations
 {
+    [self.locationManager stopUpdatingLocation];
+
     CLLocation *location = [locations lastObject];
-    NSLog(@"%@, %f, %f", location, location.coordinate.latitude, location.coordinate.longitude);
+//    NSLog(@"%@, %f, %f", location, location.coordinate.latitude, location.coordinate.longitude);
     
     CLLocationCoordinate2D coordinate = CLLocationCoordinate2DMake(location.coordinate.latitude, location.coordinate.longitude);
     MKCoordinateSpan span = MKCoordinateSpanMake(0.1f, 0.1f);
