@@ -14,7 +14,7 @@
 
 @property (strong, nonatomic) CLLocationManager *locationManager;
 @property (strong, nonatomic) SIOSocket *socket;
-@property (strong, nonatomic) NSMutableArray *markers;
+@property (strong, nonatomic) NSArray *markers;
 @property (assign, nonatomic) CLLocationCoordinate2D currentPosition;
 
 @end
@@ -26,6 +26,7 @@
     // Do any additional setup after loading the view, typically from a nib.
     
     self.markers = [NSMutableArray array];
+    self.mapView.delegate = self;
     
     self.locationManager = [[CLLocationManager alloc] init];
     self.locationManager.delegate = self;
@@ -37,13 +38,14 @@
     
     __block ViewController *pself = self;
     [SIOSocket socketWithHost:@"http://Params-MacBook-Pro.local:3000" response:^(SIOSocket *socket) {
-        self.socket = socket;
+        pself.socket = socket;
 //        NSLog(@"%@", socket);
         
-        [self.socket setOnConnect:^{
+        __block ViewController *ppself = pself;
+        [pself.socket setOnConnect:^{
             NSLog(@"client connected to server");
             
-            [pself.socket emit:@"log" args:@[@"Hi, server!"]];
+            [ppself.socket emit:@"log" args:@[@"Hi, server!"]];
         }];
         
         [pself.socket setOnDisconnect:^{
@@ -68,7 +70,10 @@
         
         [pself.socket on:@"markers" callback:^(NSArray *args) {
             NSArray *markers = args[0];
+            NSLog(@"New Markers: %lu", (unsigned long)markers.count);
 
+            [self.mapView removeAnnotations:pself.mapView.annotations];
+            
             NSMutableArray *storedMarkers = [NSMutableArray array];
             [markers enumerateObjectsUsingBlock:^(NSDictionary *marker, NSUInteger idx, BOOL *stop) {
                 NSDictionary *markerData = marker[@"doc"];
@@ -84,19 +89,19 @@
                                            @"id": markerData[@"id"],
                                            @"annotation": annotation
                                            }];
-                [self.mapView addAnnotation:annotation];
+                [pself.mapView addAnnotation:annotation];
             }];
 
-            NSLog(@"Markers: %@", storedMarkers);
-            self.markers = storedMarkers;
+            pself.markers = [storedMarkers copy];
         }];
         
         [pself.socket on:@"update" callback:^(NSArray *args) {
-            NSLog(@"Update: %@", args);
             NSDictionary *updatedMarker = args[0][@"new_val"];
+            NSLog(@"Updated Marker: %@", updatedMarker[@"id"]);
 
             NSMutableArray *storedMarkers = [NSMutableArray array];
-            [pself.markers enumerateObjectsUsingBlock:^(NSDictionary *marker, NSUInteger idx, BOOL *stop) {
+            NSArray *copyToEnumerate = [NSArray arrayWithArray:pself.markers];
+            [copyToEnumerate enumerateObjectsUsingBlock:^(NSDictionary *marker, NSUInteger idx, BOOL *stop) {
 
                 NSString *markerId = marker[@"id"];
                 if ([markerId isEqualToString:updatedMarker[@"id"]]) {
@@ -117,8 +122,8 @@
                 }
             }];
             
-            NSLog(@"Markers: %@", storedMarkers);
-            self.markers = storedMarkers;
+//            NSLog(@"Updated Markers: %@", storedMarkers.count);
+            pself.markers = [storedMarkers copy];
         }];
     }];
 }
@@ -147,7 +152,7 @@
 //    [self.mapView addAnnotation:annotation];
 
     if (self.socket) {
-        [self.socket emit:@"nearby" args:@[@{
+        [self.socket emit:@"position" args:@[@{
                                                @"latitude": [NSNumber numberWithFloat:location.coordinate.latitude],
                                                @"longitude": [NSNumber numberWithFloat:location.coordinate.longitude],
                                                @"distance": @2000
@@ -156,6 +161,19 @@
         self.currentPosition = CLLocationCoordinate2DMake(location.coordinate.latitude, location.coordinate.longitude);
     }
     
+}
+
+- (void)mapView:(MKMapView *)mapView regionDidChangeAnimated:(BOOL)animated {
+    if (!animated) {
+        CLLocationCoordinate2D location = self.mapView.centerCoordinate;
+        NSLog(@"%f, %f", self.mapView.centerCoordinate.latitude, self.mapView.centerCoordinate.longitude);
+
+        [self.socket emit:@"position" args:@[@{
+                                               @"latitude": [NSNumber numberWithFloat:location.latitude],
+                                               @"longitude": [NSNumber numberWithFloat:location.longitude],
+                                               @"distance": @2000
+                                               }]];
+    }
 }
 
 @end
