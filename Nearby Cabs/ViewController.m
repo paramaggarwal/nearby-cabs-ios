@@ -73,30 +73,53 @@
             [markers enumerateObjectsUsingBlock:^(NSDictionary *marker, NSUInteger idx, BOOL *stop) {
                 NSDictionary *markerData = marker[@"doc"];
                 
-                NSLog(@"%@", markerData);
                 NSNumber *latitude = markerData[@"position"][@"coordinates"][1];
                 NSNumber *longitude = markerData[@"position"][@"coordinates"][0];
+                CLLocationCoordinate2D position = CLLocationCoordinate2DMake([latitude floatValue], [longitude floatValue]);
+                
+                MKPointAnnotation *annotation = [[MKPointAnnotation alloc] init];
+                [annotation setCoordinate:position];
                 
                 [storedMarkers addObject:@{
                                            @"id": markerData[@"id"],
-                                           @"position": [NSValue valueWithMKCoordinate:CLLocationCoordinate2DMake([latitude floatValue], [longitude floatValue])]
+                                           @"annotation": annotation
                                            }];
+                [self.mapView addAnnotation:annotation];
             }];
 
+            NSLog(@"Markers: %@", storedMarkers);
             self.markers = storedMarkers;
-            [pself updateMarkers];
         }];
-    }];
-}
+        
+        [pself.socket on:@"update" callback:^(NSArray *args) {
+            NSLog(@"Update: %@", args);
+            NSDictionary *updatedMarker = args[0][@"new_val"];
 
-- (void)updateMarkers {
-    [self.markers enumerateObjectsUsingBlock:^(NSDictionary *marker, NSUInteger idx, BOOL *stop) {
+            NSMutableArray *storedMarkers = [NSMutableArray array];
+            [pself.markers enumerateObjectsUsingBlock:^(NSDictionary *marker, NSUInteger idx, BOOL *stop) {
 
-        MKPointAnnotation *annotation = [[MKPointAnnotation alloc] init];
-        NSValue *coordinate = (NSValue *)marker[@"position"];
-        [annotation setCoordinate:coordinate.MKCoordinateValue];
-        annotation.subtitle = marker[@"id"];
-        [self.mapView addAnnotation:annotation];
+                NSString *markerId = marker[@"id"];
+                if ([markerId isEqualToString:updatedMarker[@"id"]]) {
+                    
+                    NSNumber *latitude = updatedMarker[@"position"][@"coordinates"][1];
+                    NSNumber *longitude = updatedMarker[@"position"][@"coordinates"][0];
+                    CLLocationCoordinate2D position = CLLocationCoordinate2DMake([latitude floatValue], [longitude floatValue]);
+                    
+                    MKPointAnnotation *annotation = marker[@"annotation"];
+                    [annotation setCoordinate:position];
+                    
+                    [storedMarkers addObject:@{
+                                               @"id": updatedMarker[@"id"],
+                                               @"annotation": annotation
+                                               }];
+                } else {
+                    [storedMarkers addObject:marker];
+                }
+            }];
+            
+            NSLog(@"Markers: %@", storedMarkers);
+            self.markers = storedMarkers;
+        }];
     }];
 }
 
@@ -119,10 +142,9 @@
     [self.mapView setRegion:region animated:YES];
     
     // Place a single pin
-    MKPointAnnotation *annotation = [[MKPointAnnotation alloc] init];
-    [annotation setCoordinate:coordinate];
-//    [annotation setTitle:@"Title"]; //You can set the subtitle too
-    [self.mapView addAnnotation:annotation];
+//    MKPointAnnotation *annotation = [[MKPointAnnotation alloc] init];
+//    [annotation setCoordinate:coordinate];
+//    [self.mapView addAnnotation:annotation];
 
     if (self.socket) {
         [self.socket emit:@"nearby" args:@[@{
